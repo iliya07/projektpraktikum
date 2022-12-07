@@ -1,0 +1,10 @@
+../Core/Src/lcd.c:23:19:_LCD_SendInternal	40	static
+../Core/Src/lcd.c:54:19:_LCD_SendCommand	16	static
+../Core/Src/lcd.c:58:19:_LCD_SendData	16	static
+../Core/Src/lcd.c:64:19:LCD_Print	24	static
+../Core/Src/lcd.c:74:19:LCD_Test	24	static
+../Core/Src/lcd.c:89:19:LCD_Begin	24	static
+../Core/Src/lcd.c:111:19:LCD_SetCursor	24	static
+../Core/Src/lcd.c:120:19:LCD_Printf	44	static
+../Core/Src/lcd.c:129:19:LCD_Clear	16	static
+../Core/Src/lcd.c:133:19:LCD_SetBacklight	16	static
