@@ -33,6 +33,10 @@ float vol;
 float input;
 uint16_t raw_vol;
 uint16_t raw_input;
+uint32_t DAC_OUT[4] = {0, 1241, 2482, 3723};
+//uint32_t DAC_OUT[2] = {0, 3723};
+int32_t CH1_DC = 0;
+uint8_t i=0;
 char msg2[12];
 char msg3[12];
 char msg4[12];
@@ -58,9 +62,14 @@ ETH_DMADescTypeDef  DMATxDscrTab[ETH_TX_DESC_CNT]; /* Ethernet Tx DMA Descriptor
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
 
+DAC_HandleTypeDef hdac;
+
 ETH_HandleTypeDef heth;
 
 I2C_HandleTypeDef hi2c2;
+
+TIM_HandleTypeDef htim2;
+DMA_HandleTypeDef hdma_tim2_ch1;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart3;
@@ -68,12 +77,13 @@ UART_HandleTypeDef huart3;
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 /* USER CODE BEGIN PV */
-
+volatile int GPIO_EXTI13=0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_ETH_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
@@ -81,6 +91,8 @@ static void MX_ADC1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_ADC2_Init(void);
+static void MX_TIM2_Init(void);
+static void MX_DAC_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -118,6 +130,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ETH_Init();
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
@@ -125,14 +138,16 @@ int main(void)
   MX_USART1_UART_Init();
   MX_I2C2_Init();
   MX_ADC2_Init();
+  MX_TIM2_Init();
+  MX_DAC_Init();
   /* USER CODE BEGIN 2 */
-
+  //initilizieren von Display
   LCD_HandleTypeDef dev;
   dev.i2c = &hi2c2;
   dev.i2c_addr = LCD_DEFAULT_ADDR;
   dev.backlight_enable = 1;
   LCD_Begin(&dev);
-
+  HAL_DAC_Start(&hdac, CH1_DC);
 
   /* USER CODE END 2 */
 
@@ -140,9 +155,25 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if (HAL_GPIO_ReadPin(GPIOC,GPIO_PIN_0))
+	  DAC->DHR12R1 = DAC_OUT[i++];
+	  if (i==4)
 	  {
-		  sprintf(msg6,"MESSURE CANCEL\n");
+		  i=0;
+	  }
+	  HAL_Delay(100);
+
+	  //HAL_DAC_SetValue(&hdac, CH1_DC , DAC_ALIGN_12B_R,DAC_OUT[0]);
+/*
+	  //PWM
+	   TIM1->CCR1 = 30;
+	   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+*/
+	  /*
+	  if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_0))
+	  {
+		  sprintf(msg6,"MESSURE CANCEL");
+		  LCD_Clear(&dev);
+		  LCD_SetCursor(&dev, 0, 0);
 		  LCD_Print(&dev,msg6);
 		  	  HAL_Delay(2000);
 		  	  LCD_Clear(&dev);
@@ -152,49 +183,146 @@ int main(void)
 	  {
 	  HAL_ADC_Start(&hadc1);
 	  HAL_ADC_Start(&hadc2);
-	  HAL_ADC_PollForConversion(&hadc1, 300);
-	  HAL_ADC_PollForConversion(&hadc2, 300);
+	  HAL_ADC_PollForConversion(&hadc1, 100);
+	  HAL_ADC_PollForConversion(&hadc2, 100);
 
 	  raw_vol = HAL_ADC_GetValue(&hadc1);
 	  raw_input= HAL_ADC_GetValue(&hadc2);
 
-	  float input=raw_input*(5.0/4096);
-	  float vol=raw_vol*(5.0/4096);
-	  //input=4.89;
-	  float tau= input-vol;
+
+	  input=raw_input* (3.3/4096);
+	  vol=raw_vol*(3.3/4096);
+	  float tau=input-vol;
 
 
-	  sprintf(msg2,"vol=%.2f", vol);
-	  sprintf(msg5,"input=%.2f", input);
+	  sprintf(msg2,"vol=%.4f", vol);
+	  sprintf(msg5,"input=%.4f",input);
 	  sprintf(msg3,"tau=%.4f", tau);
 	  //sprintf(msg3,"tau=%.2f\r\n",tau);
 	  LCD_SetCursor(&dev, 0, 0);
 	  LCD_Print(&dev,msg2);
 	  LCD_SetCursor(&dev, 1, 0);
+	  LCD_Print (&dev,msg3);
 
-
-	  HAL_UART_Transmit(&huart3,(uint8_t*)msg2, strlen(msg2),300);
-	  HAL_UART_Transmit(&huart3,(uint8_t*)msg5, strlen(msg5),300);
-	  HAL_UART_Transmit(&huart3,(uint8_t*)msg3, strlen(msg3),300);
-	  HAL_Delay (1000);
+	  // UART Nachrichten für schnelleren und leichten Debugging von Code
+	  HAL_UART_Transmit(&huart3,(uint8_t*)msg2, strlen(msg2),100);
+	  HAL_UART_Transmit(&huart3,(uint8_t*)msg5, strlen(msg5),100);
+	  HAL_UART_Transmit(&huart3,(uint8_t*)msg3, strlen(msg3),100);
+	  HAL_Delay (100);
 	  }
 	  else
 	  {
-		 sprintf(msg4,"IDLE\n");
+		 sprintf(msg4,"IDLE");
 	  HAL_UART_Transmit(&huart3,(uint8_t*)msg4, strlen(msg4),300);
-	  HAL_Delay(1000);
+	  LCD_Clear(&dev);
 	  LCD_Print(&dev,msg4);
 	  HAL_Delay(2000);
 	  LCD_Clear(&dev);
 	  LCD_SetCursor(&dev, 0, 0);
 
 	  }
+*/
+	  //code with interrupts
+	  HAL_ADC_Start(&hadc1);
+	  HAL_ADC_Start(&hadc2);
+	  HAL_ADC_PollForConversion(&hadc1, 100);
+	  HAL_ADC_PollForConversion(&hadc2, 100);
+
+	  raw_vol = HAL_ADC_GetValue(&hadc1);
+	  raw_input= HAL_ADC_GetValue(&hadc2);
+
+
+	  input=raw_input* (3.3/4096);
+	  vol=raw_vol*(3.3/4096);
+	  float tau=((input/vol)-1)/100;
+
+	 if(GPIO_EXTI13==0)
+	 {
+	  sprintf(msg4,"IDLE");
+	 	  HAL_UART_Transmit(&huart3,(uint8_t*)msg4, strlen(msg4),300);
+	 	  LCD_Clear(&dev);
+	 	  LCD_Print(&dev,msg4);
+	 	  HAL_Delay(200);
+	 	  LCD_Clear(&dev);
+	 	  LCD_SetCursor(&dev, 0, 0);
+	 }
+
+
+	 else if(GPIO_EXTI13==1)
+		  {
+		  //GPIO_EXTI13=0;
+
+	  sprintf(msg2,"vol=%.4f", vol);
+	  sprintf(msg5,"input=%d",raw_input);
+	  sprintf(msg3,"tau=%.4f", tau);
+	  //sprintf(msg3,"tau=%.2f\r\n",tau);
+	  LCD_SetCursor(&dev, 0, 0);
+	  LCD_Print(&dev,msg2);
+	  LCD_SetCursor(&dev, 1, 0);
+	  LCD_Print (&dev,msg3);
+
+	  /*if (GPIO_EXTI13==1)
+		  {
+			  GPIO_EXTI13=0;
+		   sprintf(msg6,"MESSURE CANCEL");
+			  LCD_Clear(&dev);
+			  LCD_SetCursor(&dev, 0, 0);
+			  LCD_Print(&dev,msg6);
+			  LCD_SetCursor(&dev, 0, 0);
+		  }
+*/
+		  }
+
+
+	  /*else if (GPIO_EXTI13==1)
+	  {
+		  //GPIO_EXTI13=0;
+	   sprintf(msg6,"MESSURE CANCEL");
+		  LCD_Clear(&dev);
+		  LCD_SetCursor(&dev, 0, 0);
+		  LCD_Print(&dev,msg6);
+		  LCD_SetCursor(&dev, 0, 0);
+	  }
+
+*/
+		 // else if(GPIO_EXTI13==0)
+
+
+
+
+
+
 
   }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+  /*if (GPIO_EXTI13==1)
+ 		  {
+ 		  //GPIO_EXTI13=0;
+ 		 HAL_ADC_Start(&hadc1);
+ 	 	 	  HAL_ADC_Start(&hadc2);
+ 	 	 	  HAL_ADC_PollForConversion(&hadc1, 100);
+ 	 	 	  HAL_ADC_PollForConversion(&hadc2, 100);
 
+ 	 	 	  raw_vol = HAL_ADC_GetValue(&hadc1);
+ 	 	 	  raw_input= HAL_ADC_GetValue(&hadc2);
+
+
+ 	 	 	  input=raw_input* (3.3/4096);
+ 	 	 	  vol=raw_vol*(3.3/4096);
+ 	 	 	 float tau=((input/vol)-1)/300;
+ 	  sprintf(msg2,"vol=%.4f", vol);
+ 	  sprintf(msg5,"input=%d",raw_input);
+ 	  sprintf(msg3,"tau=%.4f", tau);
+ 	  //sprintf(msg3,"tau=%.2f\r\n",tau);
+ 	  LCD_SetCursor(&dev, 0, 0);
+ 	  LCD_Print(&dev,msg2);
+ 	  LCD_SetCursor(&dev, 1, 0);
+ 	  LCD_Print (&dev,msg3);
+
+ 		  }
+*/
   /* USER CODE END 3 */
 }
 
@@ -348,6 +476,46 @@ static void MX_ADC2_Init(void)
 }
 
 /**
+  * @brief DAC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DAC_Init(void)
+{
+
+  /* USER CODE BEGIN DAC_Init 0 */
+
+  /* USER CODE END DAC_Init 0 */
+
+  DAC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN DAC_Init 1 */
+
+  /* USER CODE END DAC_Init 1 */
+
+  /** DAC Initialization
+  */
+  hdac.Instance = DAC;
+  if (HAL_DAC_Init(&hdac) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** DAC channel OUT1 config
+  */
+  sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
+  sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
+  if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DAC_Init 2 */
+
+  /* USER CODE END DAC_Init 2 */
+
+}
+
+/**
   * @brief ETH Initialization Function
   * @param None
   * @retval None
@@ -441,6 +609,65 @@ static void MX_I2C2_Init(void)
   /* USER CODE BEGIN I2C2_Init 2 */
 
   /* USER CODE END I2C2_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 168-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 100-1;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
 
 }
 
@@ -546,6 +773,22 @@ static void MX_USB_OTG_FS_PCD_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -569,9 +812,9 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(USB_PowerSwitchOn_GPIO_Port, USB_PowerSwitchOn_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PC13 PC0 */
-  GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_0;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  /*Configure GPIO pin : PC13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
@@ -595,9 +838,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USB_OverCurrent_GPIO_Port, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 1, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+if(GPIO_Pin==GPIO_PIN_13){
+	GPIO_EXTI13=1;
+}
+}
 
 /* USER CODE END 4 */
 
