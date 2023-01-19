@@ -37,20 +37,19 @@ double der;
 uint16_t raw_vol;
 uint16_t raw_input;
 uint32_t DAC_OUT[4] = { 0, 1241, 2482, 3723 };
-//uint32_t DAC_OUT[2] = {0, 3723};
 int32_t CH1_DC = 0;
 uint8_t i = 0;
 char msg2[12];
-char msg3[12];
+char msg3[20];
 char msg4[12];
 char msg5[12];
 char msg6[20];
-bool single_press = false;
-bool long_press = false;
-float mes = 10;
-int m_arr[10];
+float mes = 30;
+float m_arr[30];
 float tau_avr;
 float sum;
+int j = 0;
+float tau_i;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -85,7 +84,7 @@ UART_HandleTypeDef huart3;
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 /* USER CODE BEGIN PV */
-volatile int GPIO_EXTI13 = 0;
+volatile int state = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -160,145 +159,61 @@ int main(void) {
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1) {
-		DAC->DHR12R1 = DAC_OUT[i++];
-		if (i == 2) {
-			i = 0;
-		}
-		HAL_Delay(200);
-
-		//HAL_DAC_SetValue(&hdac, CH1_DC , DAC_ALIGN_12B_R,DAC_OUT[0]);
-		/*
-		 //PWM
-		 TIM1->CCR1 = 30;
-		 HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-		 */
-		/*
-		 if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_0))
-		 {
-		 sprintf(msg6,"MESSURE CANCEL");
-		 LCD_Clear(&dev);
-		 LCD_SetCursor(&dev, 0, 0);
-		 LCD_Print(&dev,msg6);
-		 HAL_Delay(2000);
-		 LCD_Clear(&dev);
-		 LCD_SetCursor(&dev, 0, 0);
-		 }
-		 else if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13))
-		 {
-		 HAL_ADC_Start(&hadc1);
-		 HAL_ADC_Start(&hadc2);
-		 HAL_ADC_PollForConversion(&hadc1, 100);
-		 HAL_ADC_PollForConversion(&hadc2, 100);
-
-		 raw_vol = HAL_ADC_GetValue(&hadc1);
-		 raw_input= HAL_ADC_GetValue(&hadc2);
-
-
-		 input=raw_input* (3.3/4096);
-		 vol=raw_vol*(3.3/4096);
-		 float tau=input-vol;
-
-
-		 sprintf(msg2,"vol=%.4f", vol);
-		 sprintf(msg5,"input=%.4f",input);
-		 sprintf(msg3,"tau=%.4f", tau);
-		 //sprintf(msg3,"tau=%.2f\r\n",tau);
-		 LCD_SetCursor(&dev, 0, 0);
-		 LCD_Print(&dev,msg2);
-		 LCD_SetCursor(&dev, 1, 0);
-		 LCD_Print (&dev,msg3);
-
-		 // UART Nachrichten für schnelleren und leichten Debugging von Code
-		 HAL_UART_Transmit(&huart3,(uint8_t*)msg2, strlen(msg2),100);
-		 HAL_UART_Transmit(&huart3,(uint8_t*)msg5, strlen(msg5),100);
-		 HAL_UART_Transmit(&huart3,(uint8_t*)msg3, strlen(msg3),100);
-		 HAL_Delay (100);
-		 }
-		 else
-		 {
-		 sprintf(msg4,"IDLE");
-		 HAL_UART_Transmit(&huart3,(uint8_t*)msg4, strlen(msg4),300);
-		 LCD_Clear(&dev);
-		 LCD_Print(&dev,msg4);
-		 HAL_Delay(2000);
-		 LCD_Clear(&dev);
-		 LCD_SetCursor(&dev, 0, 0);
-
-		 }
-		 */
-		//code with interrupts
-		HAL_ADC_Start(&hadc1);
-		HAL_ADC_Start(&hadc2);
-		HAL_ADC_PollForConversion(&hadc1, 100);
-		HAL_ADC_PollForConversion(&hadc2, 100);
-
-		raw_vol = HAL_ADC_GetValue(&hadc1);
-		raw_input = HAL_ADC_GetValue(&hadc2);
-
-		input = raw_input * (3.3 / 4096);
-		vol = raw_vol * (3.3 / 4096);
-
-		 double derive(double (*vol)(double), double x0)
-		 {
-		 const double delta = 1.0e-6; // or similar
-		 double x1 = x0 - delta;
-		 double x2 = x0 + delta;
-		 double y1 = vol(x1);
-		 double y2 = vol(x2);
-		 return (y2 - y1) / (x2 - x1);
-		 }
-
-
-		 der = derive(sin, 0.0);
-
-
-		tau = abs ((input - vol)/der);
-
-
-			for (int i; i < mes; ++i) {
-				 m_arr[i]=tau ;
-				sum= sum+m_arr[i];
-
-			}
-			tau_avr= sum/mes;
-
-
+		/* USER CODE END WHILE */
 
 		LCD_Clear(&dev);
-		if (GPIO_EXTI13 == 0) {
-			//LCD_Clear(&dev);
+		if (state == 0) {
+			DAC->DHR12R1 = DAC_OUT[0];
 			sprintf(msg4, "IDLE");
 			HAL_UART_Transmit(&huart3, (uint8_t*) msg4, strlen(msg4), 300);
 			LCD_Print(&dev, msg4);
 			LCD_SetCursor(&dev, 0, 0);
 		}
 
-		else if (GPIO_EXTI13 == 1) {
-			//GPIO_EXTI13=0;
+		else if (state == 1) {
+			DAC->DHR12R1 = DAC_OUT[2];
+			HAL_ADC_Start(&hadc1);
+			HAL_ADC_Start(&hadc2);
+			HAL_ADC_PollForConversion(&hadc1, 100);
+			HAL_ADC_PollForConversion(&hadc2, 100);
 
-			sprintf(msg2, "vol=%.4f", vol);
-			sprintf(msg5, "input=%d", raw_input);
-			sprintf(msg3, "tau=%.2f", tau_avr);
-			//sprintf(msg3,"tau=%.2f\r\n",tau);
+			raw_vol = HAL_ADC_GetValue(&hadc1);
+			raw_input = HAL_ADC_GetValue(&hadc2);
+
+			input = raw_input * (3.3 / 4096);
+			vol = raw_vol * (3.3 / 4096);
+
+			m_arr[j]=vol;
+			j++;
+			sprintf(msg2, "measuring");
 			LCD_SetCursor(&dev, 0, 0);
 			LCD_Print(&dev, msg2);
-			LCD_SetCursor(&dev, 1, 0);
-			LCD_Print(&dev, msg3);
 			HAL_Delay(100);
-			//LCD_Clear(&dev);
+			if (j >= 30){
+				state = 3;
+			}
 
-		} else if (GPIO_EXTI13 == 2) {
-
-			sprintf(msg6, "MESSURE CANCEL");
+		} else if (state == 2) {
+			sprintf(msg3, "MESSURE CANCEL");
 			LCD_SetCursor(&dev, 0, 0);
 			LCD_Print(&dev, msg6);
 			HAL_Delay(3000);
-			GPIO_EXTI13 = 0;
+			state = 0;
+		} else if (state == 3) {
+			for(int i = 0; i <= mes-1; i++){
+				tau_i = (m_arr[i+1]-m_arr[i])/200;
+				sum = sum+tau_i;
+			}
+			tau_avr = sum/3;
+			sprintf(msg3, "tau=%.2f", tau_avr);
+			LCD_SetCursor(&dev, 0, 0);
+			LCD_Print(&dev, msg3);
+			HAL_Delay(5000);
+			state = 0;
 		}
 
+		/* USER CODE BEGIN 3 */
 	}
-
-
 	/* USER CODE END 3 */
 }
 
@@ -768,10 +683,10 @@ static void MX_GPIO_Init(void) {
 /* USER CODE BEGIN 4 */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == GPIO_PIN_13) {
-		if (GPIO_EXTI13 == 0)
-			GPIO_EXTI13 = 1;
-		else if (GPIO_EXTI13 == 1)
-			GPIO_EXTI13 = 2;
+		if (state == 0)
+			state = 1;
+		else if (state == 1)
+			state = 2;
 		else {
 			//wird in main gemacht
 		}
