@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include "lcd.h"
 #include<math.h>
+#include <stdlib.h>
 
 /* USER CODE END Includes */
 
@@ -39,17 +40,17 @@ uint16_t raw_input;
 uint32_t DAC_OUT[4] = { 0, 1241, 2482, 3723 };
 int32_t CH1_DC = 0;
 uint8_t i = 0;
-char msg2[12];
+char msg1[20];
+char msg2[20];
 char msg3[20];
-char msg4[12];
-char msg5[12];
-char msg6[20];
+char msg4[20];
 float mes = 30;
 float m_arr[30];
 float tau_avr;
-float sum;
+float sum=0;
 int j = 0;
 float tau_i;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -164,9 +165,9 @@ int main(void) {
 		LCD_Clear(&dev);
 		if (state == 0) {
 			DAC->DHR12R1 = DAC_OUT[0];
-			sprintf(msg4, "IDLE");
-			HAL_UART_Transmit(&huart3, (uint8_t*) msg4, strlen(msg4), 300);
-			LCD_Print(&dev, msg4);
+			sprintf(msg1, "IDLE");
+			//HAL_UART_Transmit(&huart3, (uint8_t*) msg1, strlen(msg1), 300);
+			LCD_Print(&dev, msg1);
 			LCD_SetCursor(&dev, 0, 0);
 		}
 
@@ -185,7 +186,7 @@ int main(void) {
 
 			m_arr[j]=vol;
 			j++;
-			sprintf(msg2, "measuring");
+			sprintf(msg2, "MEASURING");
 			LCD_SetCursor(&dev, 0, 0);
 			LCD_Print(&dev, msg2);
 			HAL_Delay(100);
@@ -196,19 +197,23 @@ int main(void) {
 		} else if (state == 2) {
 			sprintf(msg3, "MESSURE CANCEL");
 			LCD_SetCursor(&dev, 0, 0);
-			LCD_Print(&dev, msg6);
+			LCD_Print(&dev, msg3);
 			HAL_Delay(3000);
 			state = 0;
 		} else if (state == 3) {
-			for(int i = 0; i <= mes-1; i++){
-				tau_i = (m_arr[i+1]-m_arr[i])/200;
+			for(int i = 0; i <= mes-2; i++){
+				tau_i =((m_arr[i+2]-m_arr[i])/0.5);
+				if(tau_i < 0){
+					tau_i = tau_i*(-1);
+				}
 				sum = sum+tau_i;
 			}
-			tau_avr = sum/3;
-			sprintf(msg3, "tau=%.2f", tau_avr);
+			tau_avr = (sum/28);
+			sprintf(msg4, "tau=%.2f", tau_avr);
 			LCD_SetCursor(&dev, 0, 0);
-			LCD_Print(&dev, msg3);
+			LCD_Print(&dev, msg4);
 			HAL_Delay(5000);
+			sum = 0;
 			state = 0;
 		}
 
